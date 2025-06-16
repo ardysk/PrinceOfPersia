@@ -78,5 +78,5 @@ src/
 
 ## Authors
 
-*Your Name* (INF‑X) – programming, art integration, documentation.
+*Arkadiusz Kowalczyk* (INF‑ASI2) – programming, art integration, documentation.
 
