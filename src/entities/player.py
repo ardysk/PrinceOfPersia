@@ -58,6 +58,9 @@ class Player(BaseEntity):
         self.max_hp = 100
         self.hp     = self.max_hp
 
+        # punkty
+        self.score = 0       # licznik zdobytych punktów
+
         # nieczułość po trafieniu
         self.invul_timer  = 0.0
         self._blink_timer = 0.0

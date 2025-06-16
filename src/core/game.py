@@ -12,6 +12,8 @@ from ..levels.level import Level
 
 class Game:
     def __init__(self):
+        self.nick = "Player"  # domyślny nick
+
         pygame.init()
         pygame.mixer.init()
 

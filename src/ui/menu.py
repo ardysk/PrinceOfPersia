@@ -9,8 +9,9 @@ from ..core.settings import (
     CFG_DIR,           # …/config/
     DEFAULT_VOLUME     # domyślna głośność (0-1)
 )
-from ..utils.save   import load_scores
 from ..utils.loader import set_master_volume
+from ..utils.save      import add_score, get_top
+from functools import partial
 from ..levels.level import Level
 
 
@@ -42,17 +43,13 @@ class MainMenu:
             widget_selection_effect=pygame_menu.widgets.NoneSelection(),
         )
 
-        # pierwszy argument to *title* – podaj pusty string
         self.menu = pygame_menu.Menu("", WIDTH, HEIGHT, theme=theme)
-
-        # opuszczamy blok przycisków niżej (≈ wysokość jednego przycisku)
         self.menu.add.vertical_margin(120)
 
-        # ─── przyciski ────────────────────────────────────────────────
         self.menu.add.button("NEW GAME", self._new_game)
-        self.menu.add.button("LOAD",     self._load_game)
-        self.menu.add.button("OPTIONS",  self._options)
-        self.menu.add.button("QUIT",     pygame_menu.events.EXIT)
+        self.menu.add.button("SCORES", self._open_scores)  # ← NOWY
+        self.menu.add.button("OPTIONS", self._options)  # ← zmodyfikowany (patrz niżej)
+        self.menu.add.button("QUIT", pygame_menu.events.EXIT)
 
         pygame.mouse.set_visible(False)
 
@@ -63,30 +60,40 @@ class MainMenu:
         self.game.level_index = 0
         self.game.start_level()
 
-    def _load_game(self):
-        data = load_scores()
-        last = data.get("last_level", 0)
-        self.game.level_index = max(0, min(last, len(self.game.levels) - 1))
-        self.game.start_level()
-
     # --- menu OPTIONS -------------------------------------------------
 
+        # ─────────────────────────────────────────────────────────────
+        #  _options  (zastąp całą metodę)
+        # ─────────────────────────────────────────────────────────────
     def _options(self):
-        sub = pygame_menu.Menu("Options", WIDTH * 0.8, HEIGHT * 0.8)
+        """Pod-menu ustawień: nick + głośność."""
+        sub_theme = self.menu.get_theme().copy()
+        sub_theme.background_color = (10, 35, 80)          # ciemny niebieski
+        sub_theme.title_font_size   = 40
+        sub_theme.widget_font_color = (255, 173, 46)       # pomarańcz
 
-        # wczytaj zapisany poziom głośności (albo domyślny)
-        cfg_path: Path = CFG_DIR / "user_settings.json"
-        volume = DEFAULT_VOLUME
+        theme = self.menu.get_theme().copy()
+        sub = pygame_menu.Menu("Options", WIDTH * 0.8, HEIGHT * 0.8, theme=sub_theme)
+
+        # — Nickname —
+        def _set_nick(text):
+            self.game.nick = (text.strip() or "Player")[:12]
+
+        sub.add.text_input("Nickname: ", default=self.game.nick,
+                            maxchar=12, onchange=_set_nick)
+
+        # — Master volume —
+        cfg_path = CFG_DIR / "user_settings.json"
+        current = DEFAULT_VOLUME
         if cfg_path.exists():
             try:
-                volume = json.loads(cfg_path.read_text()).get("volume", DEFAULT_VOLUME)
+                current = json.loads(cfg_path.read_text()).get("volume", DEFAULT_VOLUME)
             except Exception:
                 pass
 
-        # suwak 0–100 %
         slider = sub.add.range_slider(
-            "Master Volume :",
-            default=volume,
+            "Volume: ",
+            default=current,
             range_values=(0, 1),
             increment=0.05,
             width=300,
@@ -95,14 +102,13 @@ class MainMenu:
 
         def _apply():
             vol = slider.get_value()
-            set_master_volume(vol)                # natychmiastowa zmiana
+            set_master_volume(vol)
             cfg_path.parent.mkdir(exist_ok=True)
             cfg_path.write_text(json.dumps({"volume": vol}, indent=2))
-            pygame_menu.events.BACK
+            sub._back()  # zamknij pod-menu
 
         sub.add.button("Apply", _apply)
-        sub.add.button("Back",  pygame_menu.events.BACK)
-
+        sub.add.button("Back", pygame_menu.events.BACK)
         self.menu._open(sub)
 
     # ────────────────────────────────────────────────────────────────
@@ -116,3 +122,49 @@ class MainMenu:
 
     def draw(self, screen: pygame.Surface):
         self.menu.draw(screen)
+
+# ─────────────────────────────────────────────────────────────
+#  _open_scores  (nowa / poprawiona metoda – wklej JAKO osobną
+#  metodę klasy, np. tuż nad handle_event)
+# ─────────────────────────────────────────────────────────────
+    def _open_scores(self):
+        """Wyświetla TOP-5 dla każdego poziomu w mniejszym, wyśrodkowanym oknie."""
+
+        sub_theme = self.menu.get_theme().copy()
+        sub_theme.background_color = (10, 35, 80)          # ciemny niebieski
+        sub_theme.title_font_size   = 40
+        sub_theme.widget_font_color = (255, 173, 46)       # pomarańcz
+
+        sub = pygame_menu.Menu(
+            title="High-Scores",
+            width=WIDTH * 0.7,
+            height=HEIGHT * 0.7,
+            theme=sub_theme,
+        )
+
+        for i in range(len(self.game.levels)):
+            lvl_name = f"level{i + 1}"
+            rows = get_top(lvl_name, 5)
+
+            # nagłówek poziomu
+            sub.add.label(f"[ {lvl_name.upper()} ]",
+                          font_size=30,
+                          align=pygame_menu.locals.ALIGN_CENTER)
+
+            if not rows:
+                sub.add.label("(no scores yet)",
+                              font_size=24,
+                              align=pygame_menu.locals.ALIGN_CENTER)
+            else:
+                for rank, (nick, sc) in enumerate(rows, 1):
+                    sub.add.label(f"{rank} {nick:<12} {sc:>5}",
+                                  font_size=24,
+                                  align=pygame_menu.locals.ALIGN_CENTER)
+
+            sub.add.vertical_margin(12)
+
+        sub.add.vertical_margin(20)
+        sub.add.button("Back", pygame_menu.events.BACK)
+        self.menu._open(sub)
+
+
